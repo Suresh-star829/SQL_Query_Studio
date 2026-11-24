@@ -1,9 +1,0 @@
-__pycache__/
-*.py[cod]
-.env
-venv/
-.venv/
-data/
-static/avatars/*
-!static/avatars/.gitkeep
-logs/

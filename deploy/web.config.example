@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copy into IIS site root after installing URL Rewrite + ARR and enabling ARR proxy.
+     IIS should be the only network-facing entry point. -->
+<configuration>
+  <system.webServer>
+    <security>
+      <authentication>
+        <anonymousAuthentication enabled="false" />
+        <windowsAuthentication enabled="true" />
+      </authentication>
+      <requestFiltering>
+        <requestLimits maxAllowedContentLength="1048576" />
+      </requestFiltering>
+    </security>
+    <rewrite>
+      <rules>
+        <rule name="Reverse proxy to SQL Copilot" stopProcessing="true">
+          <match url="(.*)" />
+          <action type="Rewrite" url="http://127.0.0.1:8000/{R:1}" appendQueryString="true" />
+        </rule>
+      </rules>
+    </rewrite>
+    <httpErrors existingResponse="PassThrough" />
+  </system.webServer>
+</configuration>

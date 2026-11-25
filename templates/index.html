@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SQL Query Studio — AI Powered SQL Assistance</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+      .topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        flex-shrink: 0;
+      }
+
+      .profile-group {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.22rem 0.4rem 0.22rem 0.3rem;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        background: rgba(15, 23, 42, 0.85);
+      }
+
+      .profile-group:hover {
+        border-color: rgba(56, 189, 248, 0.55);
+      }
+
+      .profile-icon-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.12rem 0.35rem 0.12rem 0.1rem;
+        border-radius: 999px;
+        border: none;
+        background: transparent;
+        color: #e2e8f0;
+        cursor: pointer;
+        font-size: 0.85rem;
+      }
+
+      .profile-icon-btn:hover .profile-name {
+        color: #7dd3fc;
+      }
+
+      .profile-avatar-img,
+      .profile-avatar-fallback {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        object-fit: cover;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(14, 165, 233, 0.2);
+        color: #7dd3fc;
+      }
+
+      .profile-name {
+        font-weight: 600;
+      }
+
+      .profile-role {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        padding: 0.12rem 0.45rem;
+        border-radius: 999px;
+        background: rgba(14, 165, 233, 0.16);
+        color: #7dd3fc;
+        border: 1px solid rgba(14, 165, 233, 0.35);
+      }
+
+      .profile-divider {
+        width: 1px;
+        height: 18px;
+        background: rgba(148, 163, 184, 0.28);
+        margin: 0 0.15rem;
+      }
+
+      .access-btn {
+        padding: 0.38rem 0.75rem;
+        border-radius: 999px;
+        border: 1px solid rgba(56, 189, 248, 0.45);
+        background: rgba(14, 165, 233, 0.14);
+        color: #bae6fd;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .access-btn:hover {
+        background: rgba(14, 165, 233, 0.25);
+      }
+
+      .logout-btn {
+        padding: 0.28rem 0.65rem;
+        border-radius: 999px;
+        border: 1px solid rgba(248, 113, 113, 0.35);
+        background: rgba(239, 68, 68, 0.14);
+        color: #fca5a5;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .logout-btn:hover:not(:disabled) {
+        background: rgba(239, 68, 68, 0.26);
+      }
+
+      .logout-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .composer {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+      }
+
+      .composer-new-chat {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.45rem 0.75rem;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        background: rgba(15, 23, 42, 0.85);
+        color: #e2e8f0;
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      .composer-new-chat:hover {
+        border-color: rgba(56, 189, 248, 0.6);
+        background: rgba(30, 41, 59, 0.95);
+      }
+
+      .modal-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(2, 6, 23, 0.75);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+      }
+
+      .modal-backdrop.open {
+        display: flex;
+      }
+
+      .modal-card {
+        width: 100%;
+        max-width: 520px;
+        background: #0f172a;
+        color: #e2e8f0;
+        border: 1px solid #1e293b;
+        border-radius: 14px;
+        padding: 1.4rem;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+        max-height: 90vh;
+        overflow-y: auto;
+      }
+
+      .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+      }
+
+      .modal-close {
+        background: transparent;
+        border: none;
+        color: #94a3b8;
+        font-size: 1.25rem;
+        cursor: pointer;
+      }
+
+      .modal-field {
+        margin-bottom: 0.85rem;
+      }
+
+      .modal-field label {
+        display: block;
+        font-size: 0.8rem;
+        color: #94a3b8;
+        margin-bottom: 0.3rem;
+      }
+
+      .modal-field input,
+      .modal-field select {
+        width: 100%;
+        padding: 0.55rem 0.7rem;
+        border-radius: 8px;
+        border: 1px solid #334155;
+        background: #020617;
+        color: #f8fafc;
+        font-size: 0.9rem;
+      }
+
+      .avatar-upload-row {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        margin-bottom: 1rem;
+      }
+
+      .avatar-preview-lg {
+        width: 60px;
+        height: 60px;
+        border-radius: 999px;
+        object-fit: cover;
+        border: 1px solid #334155;
+        background: #020617;
+      }
+
+      .modal-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.6rem;
+        margin-top: 1rem;
+      }
+
+      .modal-actions-right {
+        display: flex;
+        gap: 0.6rem;
+      }
+
+      .btn-primary {
+        padding: 0.5rem 0.95rem;
+        border-radius: 8px;
+        border: none;
+        background: #0ea5e9;
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .btn-secondary {
+        padding: 0.5rem 0.85rem;
+        border-radius: 8px;
+        border: 1px solid #334155;
+        background: transparent;
+        color: #cbd5e1;
+        cursor: pointer;
+      }
+
+      .btn-danger {
+        padding: 0.5rem 0.85rem;
+        border-radius: 8px;
+        border: 1px solid rgba(248, 113, 113, 0.45);
+        background: rgba(239, 68, 68, 0.14);
+        color: #fca5a5;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .btn-danger:hover {
+        background: rgba(239, 68, 68, 0.25);
+      }
+
+      .emp-list {
+        margin-top: 1rem;
+        border-top: 1px solid #1e293b;
+        padding-top: 0.75rem;
+      }
+
+      .emp-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid rgba(30, 41, 59, 0.7);
+        font-size: 0.85rem;
+      }
+
+      .revoke-btn {
+        padding: 0.25rem 0.55rem;
+        border-radius: 6px;
+        border: 1px solid rgba(248, 113, 113, 0.4);
+        background: rgba(239, 68, 68, 0.14);
+        color: #fca5a5;
+        cursor: pointer;
+        font-size: 0.75rem;
+      }
+
+      .modal-msg {
+        margin-top: 0.6rem;
+        font-size: 0.82rem;
+        color: #7dd3fc;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="app-shell">
+      <!-- Sidebar / Database Connection -->
+      <aside class="sidebar">
+        <!-- Brand & Database Logo -->
+        <div class="brand">
+          <div class="brand-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+              <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+              <path d="m19 19 2 2"></path>
+              <path d="m19 21 2-2"></path>
+            </svg>
+          </div>
+          <div>
+            <strong>SQL Query Studio</strong>
+            <small>AI-powered SQL assistant</small>
+          </div>
+        </div>
+
+        <div class="side-label">DATABASE CONNECTION</div>
+
+        <!-- 1. Manual Server Input & Connect Action (Available to All Signed-In Users) -->
+        <label for="server">SQL Server</label>
+        <div class="server-input-group">
+          <input
+            type="text"
+            id="server"
+            placeholder="e.g., localhost\SQLEXPRESS or 10.0.0.5"
+            autocomplete="off"
+          />
+          <button type="button" id="connectServer" class="primary-btn">Connect</button>
+        </div>
+
+        <!-- Server Connection Status Indicator -->
+        <div id="serverStatus" class="connection-status disconnected">
+          <span class="status-icon">○</span>
+          <span class="status-text">Not Connected</span>
+        </div>
+
+        <!-- 2. Database Select (disabled until server connects) -->
+        <label for="database">Database</label>
+        <select id="database" disabled>
+          <option value="">Connect to server first</option>
+        </select>
+
+        <!-- 3. Table Select & Action -->
+        <label for="table">Table (optional)</label>
+        <select id="table" disabled>
+          <option value="">Select database first</option>
+        </select>
+
+        <button id="addTable" class="secondary" disabled>＋ Add table to context</button>
+        <div id="selectedTables" class="selected-tables"></div>
+
+        <div class="sidebar-footer">
+          SQL Server · T-SQL<br>
+          Model: {{ model }}
+        </div>
+      </aside>
+
+      <!-- Main Chat & Interaction Area -->
+      <main class="main">
+        <header class="topbar">
+          <!-- Active Context Indicator -->
+          <section class="context-bar">
+            <div>
+              <span class="context-icon">▤</span>
+              <div>
+                <small>ACTIVE DATABASE CONTEXT</small>
+                <strong id="contextLabel">Choose a server and database</strong>
+              </div>
+            </div>
+            <span class="status-pill"><i></i> Schema-aware</span>
+          </section>
+
+          <div class="topbar-actions">
+            <!-- Admin-only button to grant/manage employee access -->
+            <button id="manageAccessBtn" type="button" class="access-btn" style="display: none;">
+              Employee Access
+            </button>
+
+            <!-- Unified Profile Portion (Profile Icon + Details + Logout) -->
+            <div class="profile-group">
+              <button id="profileIconBtn" type="button" class="profile-icon-btn" title="Edit Profile" aria-label="Open Profile">
+                <img id="profileAvatarImg" class="profile-avatar-img" alt="Avatar" style="display: none;" />
+                <span id="profileFallbackIcon" class="profile-avatar-fallback" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                  </svg>
+                </span>
+                <span id="profileUsername" class="profile-name"></span>
+                <span id="profileRoleBadge" class="profile-role"></span>
+              </button>
+              <span class="profile-divider" aria-hidden="true"></span>
+              <button id="logoutBtn" type="button" class="logout-btn" title="Logout">Logout</button>
+            </div>
+          </div>
+        </header>
+
+        <!-- Welcome & Suggestions Screen -->
+        <section id="welcome" class="welcome">
+          <div class="sparkle">✳</div>
+          <h2>What SQL can I help you write?</h2>
+          <p>Select your SQL Server, database and table on the left, then ask in plain English.</p>
+
+          <div class="suggestions">
+            <button class="suggestion" data-prompt="Show the latest 100 records from the selected table">↗ Show latest 100 records</button>
+            <button class="suggestion" data-prompt="Explain the columns and data types of the selected table">⌘ Explain this table</button>
+            <button class="suggestion" data-prompt="Write a query to find duplicate records in the selected table">⌕ Find duplicate records</button>
+            <button class="suggestion" data-prompt="Help me build a JOIN query using the selected table and related tables">⇄ Build a JOIN query</button>
+          </div>
+        </section>
+
+        <!-- Chat History -->
+        <section id="chat" class="chat" aria-live="polite"></section>
+
+        <!-- Message Composer -->
+        <div class="composer-wrap">
+          <div class="composer">
+            <span class="composer-ai-badge">AI</span>
+            <textarea id="message" rows="1" placeholder="Ask Gemini to write a SQL query… (Enter to send, Shift+Enter for new line)"></textarea>
+            <button id="send" class="send-button" aria-label="Send message">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="19" x2="12" y2="5"></line>
+                <polyline points="5 12 12 5 19 12"></polyline>
+              </svg>
+            </button>
+            <button id="clearChat" type="button" class="composer-new-chat" title="Start a new chat">
+              <span>New chat</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="composer-foot">
+            <span>AI-generated SQL can be incorrect. Review before execution.</span>
+            <span>Read-only execution guard enabled</span>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Edit Profile Modal -->
+    <div id="profileModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="profileModalTitle">Edit Profile</h3>
+          <button type="button" class="modal-close" id="closeProfileModal">&times;</button>
+        </div>
+
+        <div class="avatar-upload-row">
+          <img id="modalAvatarPreview" class="avatar-preview-lg" src="" alt="Profile preview" />
+          <div>
+            <label for="avatarInput" class="btn-secondary" style="display: inline-block; cursor: pointer;">
+              Choose Profile Image
+            </label>
+            <input id="avatarInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;" />
+            <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.25rem;">PNG, JPG, WEBP, or GIF (max 2 MB)</div>
+          </div>
+        </div>
+
+        <form id="profileForm">
+          <div class="modal-field">
+            <label for="profDisplayName">Display Name</label>
+            <input id="profDisplayName" type="text" required />
+          </div>
+          <div class="modal-field">
+            <label for="profEmail">Email</label>
+            <input id="profEmail" type="email" placeholder="name@company.com" />
+          </div>
+          <div class="modal-field">
+            <label for="profDepartment">Department</label>
+            <input id="profDepartment" type="text" placeholder="e.g., Data / EAM / Engineering" />
+          </div>
+          <div id="profileMsg" class="modal-msg"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-danger" id="modalLogoutBtn">Logout</button>
+            <div class="modal-actions-right">
+              <button type="button" class="btn-secondary" id="cancelProfileModal">Cancel</button>
+              <button type="submit" class="btn-primary">Save Profile</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Admin Employee Access Modal -->
+    <div id="adminAccessModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="adminModalTitle">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="adminModalTitle">Grant / Manage Employee Access</h3>
+          <button type="button" class="modal-close" id="closeAdminModal">&times;</button>
+        </div>
+
+        <form id="employeeAccessForm">
+          <div class="modal-field">
+            <label for="empUsername">Employee Username</label>
+            <input id="empUsername" type="text" placeholder="e.g., employee1" required />
+          </div>
+          <div class="modal-field">
+            <label for="empPassword">Password (required for new user; optional to keep current)</label>
+            <input id="empPassword" type="password" placeholder="At least 6 characters" />
+          </div>
+          <div class="modal-field">
+            <label for="empRole">Access Role</label>
+            <select id="empRole">
+              <option value="analytics">Analytics (DQL + DB Connection)</option>
+              <option value="developer">Developer (DML &amp; DQL + DB Connection)</option>
+              <option value="admin">Admin (Full Access + DB Connection)</option>
+            </select>
+          </div>
+          <div class="modal-field">
+            <label for="empLanguages">Languages (comma-separated, e.g., English, Telugu)</label>
+            <input id="empLanguages" type="text" placeholder="English, Telugu" value="English" />
+          </div>
+          <div class="modal-field">
+            <label for="empDisplayName">Full Name</label>
+            <input id="empDisplayName" type="text" placeholder="Employee full name" />
+          </div>
+          <div class="modal-field">
+            <label for="empDepartment">Department</label>
+            <input id="empDepartment" type="text" placeholder="e.g., Operations" />
+          </div>
+          <div id="adminMsg" class="modal-msg"></div>
+          <div class="modal-actions" style="justify-content: flex-end;">
+            <button type="button" class="btn-secondary" id="closeAdminBtn">Close</button>
+            <button type="submit" class="btn-primary">Save Access</button>
+          </div>
+        </form>
+
+        <div class="emp-list">
+          <strong style="font-size: 0.85rem;">Current Users</strong>
+          <div id="employeeList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast" role="status"></div>
+
+    <!-- Auth Profile, Edit Modal & Admin Access Handler -->
+    <script>
+      (async function initWorkspaceAuthAndProfile() {
+        const nameEl = document.getElementById("profileUsername");
+        const roleEl = document.getElementById("profileRoleBadge");
+        const avatarImg = document.getElementById("profileAvatarImg");
+        const fallbackIcon = document.getElementById("profileFallbackIcon");
+        const logoutBtn = document.getElementById("logoutBtn");
+        const modalLogoutBtn = document.getElementById("modalLogoutBtn");
+        const manageAccessBtn = document.getElementById("manageAccessBtn");
+
+        const profileIconBtn = document.getElementById("profileIconBtn");
+        const profileModal = document.getElementById("profileModal");
+        const closeProfileModal = document.getElementById("closeProfileModal");
+        const cancelProfileModal = document.getElementById("cancelProfileModal");
+        const profileForm = document.getElementById("profileForm");
+        const avatarInput = document.getElementById("avatarInput");
+        const modalAvatarPreview = document.getElementById("modalAvatarPreview");
+        const profileMsg = document.getElementById("profileMsg");
+
+        const adminModal = document.getElementById("adminAccessModal");
+        const closeAdminModal = document.getElementById("closeAdminModal");
+        const closeAdminBtn = document.getElementById("closeAdminBtn");
+        const employeeAccessForm = document.getElementById("employeeAccessForm");
+        const employeeList = document.getElementById("employeeList");
+        const adminMsg = document.getElementById("adminMsg");
+
+        let currentProfile = null;
+
+        function renderAvatar(url) {
+          if (url) {
+            const bust = `${url}?t=${Date.now()}`;
+            avatarImg.src = bust;
+            avatarImg.style.display = "inline-block";
+            fallbackIcon.style.display = "none";
+            modalAvatarPreview.src = bust;
+          } else {
+            avatarImg.style.display = "none";
+            fallbackIcon.style.display = "inline-flex";
+            modalAvatarPreview.src = "";
+          }
+        }
+
+        function applyProfileToHeader(prof) {
+          currentProfile = prof;
+          nameEl.textContent = prof.display_name || prof.username;
+          roleEl.textContent = prof.role;
+          renderAvatar(prof.avatar_url);
+          if (prof.role === "admin") {
+            manageAccessBtn.style.display = "inline-block";
+          } else {
+            manageAccessBtn.style.display = "none";
+          }
+        }
+
+        async function loadProfile() {
+          const meRes = await fetch("/api/me", { credentials: "same-origin" });
+          if (meRes.status === 401) {
+            window.location.href = "/login?next=" + encodeURIComponent(window.location.pathname);
+            return;
+          }
+          const profRes = await fetch("/api/profile", { credentials: "same-origin" });
+          if (profRes.ok) {
+            const profData = await profRes.json();
+            if (profData.success && profData.profile) {
+              applyProfileToHeader(profData.profile);
+            }
+          }
+        }
+
+        await loadProfile();
+
+        profileIconBtn.addEventListener("click", () => {
+          if (!currentProfile) return;
+          profileMsg.textContent = "";
+          document.getElementById("profDisplayName").value = currentProfile.display_name || "";
+          document.getElementById("profEmail").value = currentProfile.email || "";
+          document.getElementById("profDepartment").value = currentProfile.department || "";
+          renderAvatar(currentProfile.avatar_url);
+          profileModal.classList.add("open");
+        });
+
+        function hideProfileModal() {
+          profileModal.classList.remove("open");
+        }
+        closeProfileModal.addEventListener("click", hideProfileModal);
+        cancelProfileModal.addEventListener("click", hideProfileModal);
+
+        avatarInput.addEventListener("change", async () => {
+          const file = avatarInput.files && avatarInput.files[0];
+          if (!file) return;
+          profileMsg.textContent = "Uploading image...";
+          const fd = new FormData();
+          fd.append("avatar", file);
+          const res = await fetch("/api/profile/avatar", {
+            method: "POST",
+            credentials: "same-origin",
+            body: fd,
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            applyProfileToHeader(data.profile);
+            profileMsg.textContent = "Profile image updated.";
+          } else {
+            profileMsg.textContent = data.error || "Image upload failed.";
+          }
+          avatarInput.value = "";
+        });
+
+        profileForm.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          profileMsg.textContent = "Saving...";
+          const payload = {
+            display_name: document.getElementById("profDisplayName").value.trim(),
+            email: document.getElementById("profEmail").value.trim(),
+            department: document.getElementById("profDepartment").value.trim(),
+          };
+          const res = await fetch("/api/profile", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            applyProfileToHeader(data.profile);
+            profileMsg.textContent = "Profile saved.";
+            setTimeout(hideProfileModal, 450);
+          } else {
+            profileMsg.textContent = data.error || "Could not save profile.";
+          }
+        });
+
+        async function refreshEmployees() {
+          const res = await fetch("/api/admin/employees", { credentials: "same-origin" });
+          if (!res.ok) return;
+          const data = await res.json();
+          employeeList.innerHTML = "";
+          (data.employees || []).forEach((emp) => {
+            const row = document.createElement("div");
+            row.className = "emp-item";
+            const info = document.createElement("span");
+            const langs = (emp.languages || []).join(", ");
+            const scopes = (emp.sql_scopes || []).join(", ");
+            info.textContent = `${emp.username} (${emp.role} · ${scopes})${langs ? " · [" + langs + "]" : ""}`;
+            row.appendChild(info);
+
+            if (emp.username !== (currentProfile && currentProfile.username)) {
+              const delBtn = document.createElement("button");
+              delBtn.type = "button";
+              delBtn.className = "revoke-btn";
+              delBtn.textContent = "Revoke";
+              delBtn.addEventListener("click", async () => {
+                const r = await fetch(`/api/admin/employees/${encodeURIComponent(emp.username)}`, {
+                  method: "DELETE",
+                  credentials: "same-origin",
+                });
+                if (r.ok) refreshEmployees();
+              });
+              row.appendChild(delBtn);
+            }
+            employeeList.appendChild(row);
+          });
+        }
+
+        manageAccessBtn.addEventListener("click", async () => {
+          adminMsg.textContent = "";
+          adminModal.classList.add("open");
+          await refreshEmployees();
+        });
+
+        function hideAdminModal() {
+          adminModal.classList.remove("open");
+        }
+        closeAdminModal.addEventListener("click", hideAdminModal);
+        closeAdminBtn.addEventListener("click", hideAdminModal);
+
+        employeeAccessForm.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          adminMsg.textContent = "Saving employee access...";
+          const selectedRole = document.getElementById("empRole").value;
+          const payload = {
+            username: document.getElementById("empUsername").value.trim(),
+            password: document.getElementById("empPassword").value,
+            role: selectedRole,
+            languages: document
+              .getElementById("empLanguages")
+              .value.split(",")
+              .map((s) => s.trim())
+              .filter(Boolean),
+            display_name: document.getElementById("empDisplayName").value.trim(),
+            department: document.getElementById("empDepartment").value.trim(),
+          };
+          const res = await fetch("/api/admin/employees", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            adminMsg.textContent = `Access saved for ${data.employee.username} (${data.employee.role} · ${(data.employee.sql_scopes || []).join(", ")}).`;
+            document.getElementById("empPassword").value = "";
+            await refreshEmployees();
+          } else {
+            adminMsg.textContent = data.error || "Failed to save employee access.";
+          }
+        });
+
+        async function performLogout() {
+          logoutBtn.disabled = true;
+          if (modalLogoutBtn) modalLogoutBtn.disabled = true;
+          try {
+            await fetch("/api/logout", {
+              method: "POST",
+              credentials: "same-origin",
+            });
+          } finally {
+            window.location.href = "/login";
+          }
+        }
+
+        logoutBtn.addEventListener("click", performLogout);
+        if (modalLogoutBtn) {
+          modalLogoutBtn.addEventListener("click", performLogout);
+        }
+      })();
+    </script>
+
+    <!-- Application Script -->
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  </body>
+</html>

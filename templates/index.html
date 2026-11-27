@@ -114,6 +114,37 @@
         cursor: not-allowed;
       }
 
+      .sql-creds-box {
+        display: none;
+        flex-direction: column;
+        gap: 0.45rem;
+        margin-top: 0.5rem;
+        padding: 0.6rem;
+        border-radius: 10px;
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        background: rgba(2, 6, 23, 0.55);
+      }
+
+      .sql-creds-box.open {
+        display: flex;
+      }
+
+      .sql-creds-box input {
+        width: 100%;
+        padding: 0.48rem 0.65rem;
+        border-radius: 8px;
+        border: 1px solid #334155;
+        background: #020617;
+        color: #f8fafc;
+        font-size: 0.84rem;
+        box-sizing: border-box;
+      }
+
+      .sql-creds-box input:focus {
+        outline: none;
+        border-color: #38bdf8;
+      }
+
       .composer {
         display: flex;
         align-items: center;
@@ -330,10 +361,38 @@
           <input
             type="text"
             id="server"
-            placeholder="e.g., localhost\SQLEXPRESS or 10.0.0.5"
+            placeholder="e.g., localhost\SQLEXPRESS or dbXXXX.public.databaseasp.net"
             autocomplete="off"
           />
           <button type="button" id="connectServer" class="primary-btn">Connect</button>
+        </div>
+
+        <!-- 1b. Authentication Mode & SQL Server Credentials -->
+        <label for="authType">Authentication</label>
+        <select id="authType">
+          <option value="windows">Windows Authentication</option>
+          <option value="sql">SQL Server Authentication</option>
+        </select>
+
+        <div id="sqlCredsBox" class="sql-creds-box">
+          <input
+            type="text"
+            id="dbUsername"
+            placeholder="SQL Login Username"
+            autocomplete="username"
+          />
+          <input
+            type="password"
+            id="dbPassword"
+            placeholder="SQL Password"
+            autocomplete="current-password"
+          />
+          <input
+            type="text"
+            id="dbDefaultName"
+            placeholder="Database Name (optional, recommended for .net hosts)"
+            autocomplete="off"
+          />
         </div>
 
         <!-- Server Connection Status Indicator -->
@@ -543,6 +602,79 @@
 
     <!-- Notification Toast -->
     <div id="toast" class="toast" role="status"></div>
+
+    <!-- Dual Auth (Windows / SQL Server) UI & Fetch Bridge -->
+    <script>
+      (function initDualAuthControls() {
+        const authTypeEl = document.getElementById("authType");
+        const sqlCredsBox = document.getElementById("sqlCredsBox");
+        const serverInput = document.getElementById("server");
+        const connectBtn = document.getElementById("connectServer");
+        const dbUserInput = document.getElementById("dbUsername");
+        const dbPassInput = document.getElementById("dbPassword");
+        const dbDefaultNameInput = document.getElementById("dbDefaultName");
+
+        function syncAuthBox() {
+          if (authTypeEl.value === "sql") {
+            sqlCredsBox.classList.add("open");
+          } else {
+            sqlCredsBox.classList.remove("open");
+          }
+        }
+
+        authTypeEl.addEventListener("change", syncAuthBox);
+        syncAuthBox();
+
+        // Auto-select SQL Server Authentication when a remote .net server is entered
+        serverInput.addEventListener("blur", () => {
+          const val = serverInput.value.trim().toLowerCase();
+          if (val.endsWith(".net") && authTypeEl.value !== "sql") {
+            authTypeEl.value = "sql";
+            syncAuthBox();
+          }
+        });
+
+        // Allow pressing Enter inside SQL credential fields to connect
+        [dbUserInput, dbPassInput, dbDefaultNameInput].forEach((el) => {
+          el.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              connectBtn.click();
+            }
+          });
+        });
+
+        // Automatically attach UI auth_type & SQL credentials to /api/connect-server requests
+        const origFetch = window.fetch.bind(window);
+        window.fetch = function (input, init) {
+          const url = typeof input === "string" ? input : (input && input.url) || "";
+          const method = ((init && init.method) || (input && input.method) || "GET").toUpperCase();
+
+          if (url.includes("/api/connect-server") && method === "POST" && init && typeof init.body === "string") {
+            try {
+              const payload = JSON.parse(init.body);
+              const mode = authTypeEl.value;
+              payload.auth_type = mode;
+              if (mode === "sql") {
+                payload.username = dbUserInput.value.trim();
+                payload.password = dbPassInput.value;
+                const defaultDb = dbDefaultNameInput.value.trim();
+                if (defaultDb) {
+                  payload.database = defaultDb;
+                }
+              } else {
+                payload.username = "";
+                payload.password = "";
+              }
+              init = Object.assign({}, init, { body: JSON.stringify(payload) });
+            } catch (_) {
+              // Pass through unchanged if body is not JSON
+            }
+          }
+          return origFetch(input, init);
+        };
+      })();
+    </script>
 
     <!-- Auth Profile, Edit Modal & Admin Access Handler -->
     <script>

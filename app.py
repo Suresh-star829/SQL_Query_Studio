@@ -43,6 +43,26 @@ try:
 except json.JSONDecodeError:
     SQL_SERVERS = {}
 
+DEFAULT_DB_SERVER = os.getenv("DB_SERVER", "").strip()
+DEFAULT_DB_NAME = os.getenv("DB_NAME", "").strip()
+DEFAULT_DB_USER = os.getenv("DB_USER", "").strip()
+DEFAULT_DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+
+if not SQL_SERVERS and DEFAULT_DB_SERVER:
+    SQL_SERVERS["default"] = {
+        "label": DEFAULT_DB_SERVER,
+        "server": DEFAULT_DB_SERVER,
+        "database": DEFAULT_DB_NAME,
+        "username": DEFAULT_DB_USER,
+        "password": DEFAULT_DB_PASSWORD,
+        "driver": "ODBC Driver 17 for SQL Server",
+        "encrypt": "yes",
+        "trust_server_certificate": "yes",
+    }
+
+# Server-side in-memory store for UI-supplied DB credentials (never stored in cookies)
+_SESSION_DB_CREDS = {}
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-4-hydrogen").strip()
 GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "").strip()
@@ -327,6 +347,36 @@ def _build_profile_payload(username: str):
     }
 
 
+# --- Session DB Credential Helpers ---
+def _set_session_db_creds(server_target: str, auth_type: str, username: str = "", password: str = "", database: str = ""):
+    cred_id = session.get("db_cred_id")
+    if not cred_id:
+        cred_id = uuid.uuid4().hex
+        session["db_cred_id"] = cred_id
+
+    bucket = _SESSION_DB_CREDS.setdefault(cred_id, {})
+    bucket[str(server_target).strip().lower()] = {
+        "auth_type": auth_type,
+        "username": username,
+        "password": password,
+        "database": database,
+    }
+
+
+def _get_session_db_creds(server_target: str) -> dict:
+    cred_id = session.get("db_cred_id")
+    if not cred_id:
+        return {}
+    bucket = _SESSION_DB_CREDS.get(cred_id, {})
+    return bucket.get(str(server_target).strip().lower(), {})
+
+
+def _clear_session_db_creds():
+    cred_id = session.pop("db_cred_id", None)
+    if cred_id:
+        _SESSION_DB_CREDS.pop(cred_id, None)
+
+
 # --- Cache & Generation Config ---
 CACHE_TTL_SECONDS = 600
 _RESPONSE_CACHE = {}
@@ -589,46 +639,73 @@ def get_server_config(server_target):
         raise ValueError("Server name or target cannot be empty.")
 
     if server_target in SQL_SERVERS:
-        return SQL_SERVERS[server_target]
+        cfg = dict(SQL_SERVERS[server_target])
+    else:
+        cfg = None
+        for _, item in SQL_SERVERS.items():
+            if str(item.get("server", "")).strip().lower() == str(server_target).strip().lower():
+                cfg = dict(item)
+                break
 
-    for _, cfg in SQL_SERVERS.items():
-        if str(cfg.get("server", "")).strip().lower() == str(server_target).strip().lower():
-            return cfg
+    if not cfg:
+        cfg = {
+            "server": server_target,
+            "driver": "ODBC Driver 17 for SQL Server",
+            "encrypt": "yes",
+            "trust_server_certificate": "yes",
+        }
 
-    return {
-        "server": server_target,
-        "driver": "ODBC Driver 17 for SQL Server",
-        "encrypt": "yes",
-        "trust_server_certificate": "yes",
-    }
+    # Apply UI-supplied session credentials if present for this server
+    sess_creds = _get_session_db_creds(server_target)
+    if sess_creds:
+        cfg["auth_type"] = sess_creds.get("auth_type", cfg.get("auth_type", ""))
+        if sess_creds.get("auth_type") == "windows":
+            cfg["username"] = ""
+            cfg["password"] = ""
+        else:
+            if sess_creds.get("username"):
+                cfg["username"] = sess_creds["username"]
+            if sess_creds.get("password"):
+                cfg["password"] = sess_creds["password"]
+        if sess_creds.get("database"):
+            cfg["database"] = sess_creds["database"]
+
+    return cfg
 
 
-def connect(server_target, database="master"):
+def connect(server_target, database=None, auth_type=None, username=None, password=None):
     cfg = get_server_config(server_target)
     driver = cfg.get("driver", "ODBC Driver 17 for SQL Server")
-    database = str(database).replace("}", "}}")
+    target_db = (database or cfg.get("database") or "master").strip()
+    safe_db = str(target_db).replace("}", "}}")
     server_host = str(cfg["server"]).replace("}", "}}")
+
+    effective_auth = (auth_type or cfg.get("auth_type") or "").strip().lower()
+    db_user = (username if username is not None else (cfg.get("username") or "")).strip()
+    db_pass = password if password is not None else (cfg.get("password") or "")
+
+    if not effective_auth:
+        effective_auth = "sql" if db_user else "windows"
 
     parts = [
         f"DRIVER={{{driver}}}",
         f"SERVER={server_host}",
-        f"DATABASE={{{database}}}",
+        f"DATABASE={{{safe_db}}}",
         f"Encrypt={cfg.get('encrypt', 'yes')}",
         f"TrustServerCertificate={cfg.get('trust_server_certificate', 'yes')}",
-        "Connection Timeout=8",
     ]
 
-    db_user = (cfg.get("username") or "").strip()
-    db_pass = cfg.get("password") or ""
-    if db_user:
+    if effective_auth == "sql":
+        if not db_user or not db_pass:
+            raise ValueError("Username and password are required for SQL Server Authentication.")
         safe_user = db_user.replace("}", "}}")
         safe_pass = str(db_pass).replace("}", "}}")
-        parts.append(f"UID={safe_user}")
-        parts.append(f"PWD={safe_pass}")
+        parts.append(f"UID={{{safe_user}}}")
+        parts.append(f"PWD={{{safe_pass}}}")
     else:
         parts.append("Trusted_Connection=yes")
 
-    return pyodbc.connect(";".join(parts) + ";", timeout=8)
+    return pyodbc.connect(";".join(parts) + ";", timeout=15)
 
 
 def ensure_identifier(value, label):
@@ -748,6 +825,7 @@ def api_login():
 
 @app.post("/api/logout")
 def api_logout():
+    _clear_session_db_creds()
     session.clear()
     return jsonify({"success": True})
 
@@ -943,27 +1021,96 @@ def api_servers():
     )
 
 
+def _list_accessible_databases(
+    server: str,
+    exclude_system: bool = True,
+    auth_type: str = None,
+    username: str = None,
+    password: str = None,
+    default_db: str = "",
+) -> list[str]:
+    cfg = get_server_config(server)
+    target_default_db = (default_db or cfg.get("database") or "").strip()
+
+    try:
+        initial_db = target_default_db or "master"
+        with connect(server, initial_db, auth_type=auth_type, username=username, password=password) as conn:
+            cur = conn.cursor()
+            if exclude_system:
+                cur.execute(
+                    """
+                    SELECT name FROM sys.databases
+                    WHERE state_desc='ONLINE' AND HAS_DBACCESS(name)=1
+                      AND name NOT IN ('master', 'tempdb', 'model', 'msdb')
+                    ORDER BY name
+                """
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT name FROM sys.databases
+                    WHERE state_desc='ONLINE' AND HAS_DBACCESS(name)=1
+                    ORDER BY name
+                """
+                )
+            databases = [r[0] for r in cur.fetchall()]
+            if databases:
+                return databases
+            if target_default_db:
+                return [target_default_db]
+            return []
+    except Exception:
+        if target_default_db:
+            with connect(server, target_default_db, auth_type=auth_type, username=username, password=password) as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT DB_NAME()")
+                row = cur.fetchone()
+                return [row[0] if row and row[0] else target_default_db]
+        raise
+
+
 @app.post("/api/connect-server")
 @login_required
 def api_connect_server():
     data = request.get_json(silent=True) or {}
     server = (data.get("server") or "").strip()
+    auth_type = (data.get("auth_type") or "").strip().lower()
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    database = (data.get("database") or "").strip()
+
     if not server:
         return jsonify({"success": False, "message": "Server address is required."}), 400
 
+    if not auth_type:
+        auth_type = "sql" if username else "windows"
+
+    if auth_type not in ("windows", "sql"):
+        return jsonify({"success": False, "message": "Invalid authentication type."}), 400
+
+    if auth_type == "sql" and (not username or not password):
+        return jsonify(
+            {"success": False, "message": "Username and password are required for SQL Server Authentication."}
+        ), 400
+
     try:
-        with connect(server, "master") as conn:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT name FROM sys.databases
-                WHERE state_desc='ONLINE' AND HAS_DBACCESS(name)=1
-                  AND name NOT IN ('master', 'tempdb', 'model', 'msdb')
-                ORDER BY name
-            """
-            )
-            databases = [r[0] for r in cur.fetchall()]
-            return jsonify({"success": True, "databases": databases})
+        databases = _list_accessible_databases(
+            server,
+            exclude_system=True,
+            auth_type=auth_type,
+            username=username if auth_type == "sql" else "",
+            password=password if auth_type == "sql" else "",
+            default_db=database,
+        )
+        # Save credentials in server-side session for subsequent requests
+        _set_session_db_creds(
+            server_target=server,
+            auth_type=auth_type,
+            username=username if auth_type == "sql" else "",
+            password=password if auth_type == "sql" else "",
+            database=database,
+        )
+        return jsonify({"success": True, "databases": databases, "auth_type": auth_type})
     except Exception as e:
         app.logger.exception("Server connection check failed")
         return jsonify({"success": False, "message": safe_error(e)}), 400
@@ -974,16 +1121,8 @@ def api_connect_server():
 def api_databases():
     try:
         server = request.args.get("server", "").strip()
-        with connect(server, "master") as conn:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT name FROM sys.databases
-                WHERE state_desc='ONLINE' AND HAS_DBACCESS(name)=1
-                ORDER BY name
-            """
-            )
-            return jsonify([r[0] for r in cur.fetchall()])
+        databases = _list_accessible_databases(server, exclude_system=False)
+        return jsonify(databases)
     except Exception as e:
         app.logger.exception("Database listing failed")
         return jsonify({"error": safe_error(e)}), 400
